@@ -23,6 +23,7 @@ import gate.util.GateException;
 public class YodieOutputHandler implements OutputHandler{
 	OutputSetting[] anns;
 	String outputFilePrefix;
+	boolean thread_files = true;
 	List<AnnotationSetDefinition> annotationDefs = null;
 
 	@Override
@@ -34,7 +35,12 @@ public class YodieOutputHandler implements OutputHandler{
 	@Override
 	public void config(Map<String, String> settings) throws IOException,
 			GateException {
-		outputFilePrefix = settings.get("output_folder") + File.separator + "anns";
+		if (settings.containsKey("file_based") && settings.get("file_based").equalsIgnoreCase("true"))
+			thread_files = false;
+		if (thread_files)
+			outputFilePrefix = settings.get("output_folder") + File.separator + "anns";
+		else
+			outputFilePrefix = settings.get("output_folder");
 		
 	}
 
@@ -53,45 +59,20 @@ public class YodieOutputHandler implements OutputHandler{
 	@Override
 	public void outputDocument(Document doc, DocumentID docId)
 			throws IOException, GateException {
-		if (anns != null){
-			List<AnnotationSet> outputAnns = new LinkedList<AnnotationSet>();
-			
-			//output based on settings
-			for(OutputSetting os : anns){
-				AnnotationSet as = doc.getAnnotations(os.getAnnotationSet());
-				for (String type : os.getAnnotationType()){
-					outputAnns.add(as.get(type));
-//					Iterator<Annotation> ait = as.get(type).iterator();
-//					while(ait.hasNext()){
-//						Annotation an = ait.next();
-//						for(Object key : an.getFeatures().keySet()){
-//							an.getFeatures().get(key);
-//						}
-//					}
-				}
+		String s = OutputHelper.getOutputAnnJSON(anns, doc, null);
+		if (s != null){
+			File f = null;
+			if (this.thread_files)
+				f = new File(outputFilePrefix + Thread.currentThread().getId());
+			else{
+				String prefix = docId.getIdText();
+				if (prefix.indexOf(".") >= 0)
+					prefix = prefix.replaceFirst("[.][^.]+$", "");
+				f = new File(outputFilePrefix + File.separator + prefix + ".json");
 			}
 			
-			//output all
-//			for(String setName : doc.getAnnotationSetNames()){
-//				AnnotationSet as = doc.getAnnotations(setName);
-//				for(String type : as.getAllTypes()){
-//					outputAnns.add(as.get(type));
-//				}
-//			}
-			
-			OutputData od = new OutputData();
-			if (doc.getFeatures()!=null && doc.getFeatures().get("id")!=null)
-					od.setDocId(doc.getFeatures().get("id").toString());
-			else
-				od.setDocId(doc.getName());
-			if (doc.getFeatures()!=null && doc.getFeatures().get("brcid")!=null)
-				od.setBrcId(doc.getFeatures().get("brcid").toString());
-			od.setAnnotations(outputAnns);
-			String s = JSONUtils.toJSON(od) + "\n";
-			
-			File f = new File(outputFilePrefix + Thread.currentThread().getId());
 			FileUtils.writeStringToFile(f, s, true);
-		}
+		}		
 	}
 
 	@Override

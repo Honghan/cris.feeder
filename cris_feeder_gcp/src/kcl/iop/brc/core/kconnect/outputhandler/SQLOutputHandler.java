@@ -34,6 +34,13 @@ public class SQLOutputHandler implements OutputHandler {
 	String conceptString = null;
 	String dbConnURI = null;
 	String outputTable = "kconnect_annotations";
+	String singleAnnSQLTemplate = "insert into " + outputTable
+			+ "(CN_Doc_ID, start_offset, end_offset, experiencer, inst_uri, string_orig, pref_label, sty, negation, temporality, brcid) values "
+			+ "(''{0}'', {1}, {2}, ''{3}'', ''{4}'', ''{5}'', ''{6}'', ''{7}'', ''{8}'', ''{9}'', ''{10}'');";
+	String docAnnSQLTemplate = "insert into " + outputTable
+			+ "(CN_Doc_ID, anns, brcid, src_table, src_col) values "
+			+ "(''{0}'', ''{1}'', ''{2}'', ''{3}'', ''{4}'');";
+	boolean docBasedOutput = false;
 	@Override
 	public void close() throws IOException, GateException {
 		// TODO Auto-generated method stub
@@ -64,7 +71,22 @@ public class SQLOutputHandler implements OutputHandler {
 				e.printStackTrace();
 			}
 		}
-
+		
+		if (settings.containsKey("singleAnnSQLTemplate")){
+			singleAnnSQLTemplate = settings.get("singleAnnSQLTemplate");
+		}
+		
+		if (settings.containsKey("docAnnSQLTemplate")){
+			docAnnSQLTemplate = settings.get("docAnnSQLTemplate");
+		}
+		
+		if (settings.containsKey("annotationOutputSettings")){
+			anns = JSONUtils.fromJSON( settings.get("annotationOutputSettings"), OutputSetting[].class );
+		}
+		
+		if (settings.containsKey("docBasedOutput")){
+			docBasedOutput = settings.get("docBasedOutput").equalsIgnoreCase("yes");
+		}
 	}
 
 	@Override
@@ -75,14 +97,12 @@ public class SQLOutputHandler implements OutputHandler {
 
 	@Override
 	public void init() throws IOException, GateException {
-		anns = 
-				JSONUtils.fromJSON( Configurator.getConfig("annotationOutputSettings"), OutputSetting[].class );
+//		anns = 
+//				JSONUtils.fromJSON( Configurator.getConfig("annotationOutputSettings"), OutputSetting[].class );
 	}
 	
 	void convertAnnotations2SQLs(AnnotationSet annSet, List<String> sqls, String docId, String brcId){
-		MessageFormat fmt = new MessageFormat("insert into " + outputTable
-				+ "(CN_Doc_ID, start_offset, end_offset, experiencer, inst_uri, string_orig, pref_label, sty, negation, temporality, brcid) values "
-				+ "(''{0}'', {1}, {2}, ''{3}'', ''{4}'', ''{5}'', ''{6}'', ''{7}'', ''{8}'', ''{9}'', ''{10}'');");
+		MessageFormat fmt = new MessageFormat(singleAnnSQLTemplate);
 		 Iterator<Annotation> annIt = annSet.iterator();
 		 while(annIt.hasNext()){
 			 Annotation ann = annIt.next();
@@ -105,26 +125,48 @@ public class SQLOutputHandler implements OutputHandler {
 			 sqls.add(fmt.format(args.toArray(new Object[0])));
 		 }
 	}
+	
+	void getDocAnnSQLs(String annJSON, List<String> sqls, String docId, String brcId, String srcTable, String srcCol){
+		MessageFormat fmt = new MessageFormat(docAnnSQLTemplate);
+		List<Object> args = new LinkedList<Object>();
+		args.add(docId);
+		args.add(DBUtil.escapeString(annJSON));
+		args.add(brcId);
+		args.add(srcTable);
+		args.add(srcCol);
+		sqls.add(fmt.format(args.toArray(new Object[0])));
+	}
 
 	@Override
 	public void outputDocument(Document doc, DocumentID did)
 			throws IOException, GateException {
 		if (anns != null){
-			String docId = null, brcId = null;
+			String docId = null, brcId = null, srcTable = null, srcCol = null;
 			if (doc.getFeatures()!=null && doc.getFeatures().get("id")!=null)
 				docId = doc.getFeatures().get("id").toString();
 			if (doc.getFeatures()!=null && doc.getFeatures().get("brcid")!=null)
 				brcId = doc.getFeatures().get("brcid").toString();
+			if (doc.getFeatures()!=null && doc.getFeatures().get("src_table")!=null)
+				srcTable = doc.getFeatures().get("src_table").toString();
+			if (doc.getFeatures()!=null && doc.getFeatures().get("src_col")!=null)
+				srcCol = doc.getFeatures().get("src_col").toString();
 			
 			List<String> sqls = new LinkedList<String>();
 			
-			//output based on settings
-			for(OutputSetting os : anns){
-				AnnotationSet as = doc.getAnnotations(os.getAnnotationSet());
-				for (String type : os.getAnnotationType()){
-					convertAnnotations2SQLs(as.get(type), sqls, docId, brcId);
+			if (!this.docBasedOutput){
+				//output based on settings
+				for(OutputSetting os : anns){
+					AnnotationSet as = doc.getAnnotations(os.getAnnotationSet());
+					for (String type : os.getAnnotationType()){
+						convertAnnotations2SQLs(as.get(type), sqls, docId, brcId);
+					}
 				}
+			}else{
+				getDocAnnSQLs(OutputHelper.getOutputAnnJSON(anns, doc, this.conceptString),
+						sqls, doc.getFeatures().get("id").toString(),
+						brcId, srcTable, srcCol);
 			}
+			
 			
 			try {
 				if (sqls.size() > 0){

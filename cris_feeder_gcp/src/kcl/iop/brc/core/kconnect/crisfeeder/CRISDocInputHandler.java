@@ -25,16 +25,10 @@ public class CRISDocInputHandler implements InputHandler {
 	static Logger _logger = Logger.getLogger(CRISDocInputHandler.class);
 	static String mimeType = Configurator.getConfig("mimieType");
 	static String encoding = Configurator.getConfig("encoding");
-	static String sqlPrefix = "select "
-			+ DBUtil.escapeString(Configurator.getConfig("DocTableContentCol")) + ","
-			+ DBUtil.escapeString(Configurator.getConfig("DocTableDocDateCol")) + ","
-			+ DBUtil.escapeString(Configurator.getConfig("DocTableDocIDCol"))
-			+ ", src_table, src_col, DateModified from "
-			+ DBUtil.escapeString(Configurator.getConfig("DocTableName"))
-			+ " where "
-			+ DBUtil.escapeString(Configurator.getConfig("DocTableDocIDCol"))
-			+ "=";
+	static String sqlPrefix = null;
 	boolean useXMLConfig = false;
+	boolean useFixedTable = false;
+	String fixedTableName = null;
 	@Override
 	public void close() throws IOException, GateException {
 		// TODO Auto-generated method stub
@@ -57,6 +51,13 @@ public class CRISDocInputHandler implements InputHandler {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
+		}
+		if ( (null != Configurator.getConfig("FixedDocTable")) || settings.containsKey("FixedDocTable")){
+			this.useFixedTable = true;
+			if (settings.containsKey("FixedDocTable"))
+				this.fixedTableName = settings.get("FixedDocTable");
+			else
+				this.fixedTableName = Configurator.getConfig("FixedDocTable");
 		}
 	}
 
@@ -122,6 +123,10 @@ public class CRISDocInputHandler implements InputHandler {
 			    doc.getFeatures().put("id", dataRow[2]);
 			    if (dataRow.length >= 7)
 			    	doc.getFeatures().put("brcid", dataRow[6]);
+			    if (dataRow.length >= 5){
+			    	doc.getFeatures().put("src_table", dataRow[3]);
+			    	doc.getFeatures().put("src_col", dataRow[4]);
+			    }
 			    
 			}else{
 				docSql = "select TextContent, DateModified, BrcId " + 
